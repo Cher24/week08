@@ -22,14 +22,17 @@ jobs:
       PRODUCT_API_IP: ${{ steps.get_product_ip.outputs.external_ip }}
       ORDER_API_IP: ${{ steps.get_order_ip.outputs.external_ip }}
     steps:
+      # Step 1: Checkout repository
       - uses: actions/checkout@v4
 
+      # Step 2: Azure login using Service Principal JSON
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-          enable-AzPSSession: true
+          enable-AzPSSession: false  # Set false for bash scripts
 
+      # Step 3: Set AKS credentials
       - name: Set AKS context
         run: |
           az aks get-credentials \
@@ -37,6 +40,7 @@ jobs:
             --name ${{ github.event.inputs.aks_cluster_name }} \
             --overwrite-existing
 
+      # Step 4: Attach ACR to AKS
       - name: Attach ACR
         run: |
           az aks update \
@@ -44,6 +48,7 @@ jobs:
             --resource-group ${{ github.event.inputs.aks_resource_group }} \
             --attach-acr ${{ github.event.inputs.aks_acr_name }}
 
+      # Step 5: Deploy backend infrastructure
       - name: Deploy Backend Infrastructure
         run: |
           cd k8s/
@@ -52,12 +57,14 @@ jobs:
           kubectl apply -f product-db.yaml
           kubectl apply -f order-db.yaml
 
+      # Step 6: Deploy backend microservices
       - name: Deploy Backend Microservices
         run: |
           cd k8s/
           kubectl apply -f product-service.yaml
           kubectl apply -f order-service.yaml
 
+      # Step 7: Wait for LoadBalancer IPs
       - name: Wait for LoadBalancer IPs
         run: |
           PRODUCT_IP=""
@@ -65,13 +72,20 @@ jobs:
           for i in $(seq 1 60); do
             PRODUCT_IP=$(kubectl get service product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
             ORDER_IP=$(kubectl get service order-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
-            if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then break; fi
+            if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then
+              echo "LoadBalancer IPs assigned."
+              break
+            fi
             sleep 5
           done
-          if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then exit 1; fi
+          if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then
+            echo "Error: LoadBalancer IPs not assigned after timeout."
+            exit 1
+          fi
           echo "PRODUCT_IP=$PRODUCT_IP" >> $GITHUB_ENV
           echo "ORDER_IP=$ORDER_IP" >> $GITHUB_ENV
 
+      # Step 8: Capture IPs as workflow outputs
       - name: Capture Product IP
         id: get_product_ip
         run: echo "external_ip=${{ env.PRODUCT_IP }}" >> $GITHUB_OUTPUT
@@ -80,9 +94,11 @@ jobs:
         id: get_order_ip
         run: echo "external_ip=${{ env.ORDER_IP }}" >> $GITHUB_OUTPUT
 
+      # Step 9: Logout from Azure
       - name: Logout from Azure
         run: az logout
 
+  # Step 10: Trigger frontend deployment using the reusable workflow
   trigger_frontend_cd:
     needs: deploy_backend
     uses: ./.github/workflows/frontend-cd.yml
