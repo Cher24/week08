@@ -29,7 +29,7 @@ jobs:
       - name: Azure Login
         uses: azure/login@v1
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          creds: ${{ secrets.SERVICE_PRINCIPAL }}
           enable-AzPSSession: false  # Set false for bash scripts
 
       # Step 3: Set AKS credentials
