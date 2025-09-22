@@ -4,14 +4,14 @@ name: Frontend CI - Build & Test
 on:
   push:
     branches:
-      - development
+      - development    # 🔹 Run CI on development branch
     paths:
       - 'frontend/**'
       - '.github/workflows/frontend-ci.yml'
   pull_request:
     branches:
-      - main
-  workflow_dispatch:
+      - main           # 🔹 Run CI on PRs to main branch
+  workflow_dispatch:    # 🔹 Manual trigger supported
 
 env:
   ACR_LOGIN_SERVER: ${{ secrets.AZURE_CONTAINER_REGISTRY }}
