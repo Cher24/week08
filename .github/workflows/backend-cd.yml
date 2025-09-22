@@ -1,18 +1,22 @@
 # week08/.github/workflows/backend-cd.yml
-name: CD - Deploy Backend to AKS
+name: CD - Deploy Backend Services to AKS
 
 on:
+  # Manual trigger still supported
   workflow_dispatch:
     inputs:
       aks_cluster_name:
-        description: 'Name of AKS cluster'
+        description: 'Name of the AKS Cluster to deploy to'
         required: true
+        default: '<aks_cluster_name>'
       aks_resource_group:
-        description: 'Resource group of AKS'
+        description: 'Resource Group of the AKS Cluster'
         required: true
+        default: '<resource_group_name>'
       aks_acr_name:
-        description: 'ACR name'
+        description: 'Name of ACR'
         required: true
+        default: '<acr_name>'
 
 jobs:
   deploy_backend:
@@ -21,26 +25,24 @@ jobs:
     outputs:
       PRODUCT_API_IP: ${{ steps.get_product_ip.outputs.external_ip }}
       ORDER_API_IP: ${{ steps.get_order_ip.outputs.external_ip }}
-    steps:
-      # Step 1: Checkout repository
-      - uses: actions/checkout@v4
 
-      # Step 2: Azure login
-      - name: Azure Login
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Log in to Azure
         uses: azure/login@v1
         with:
-          auth-type: user
-          enable-AzPSSession: false  # Use bash scripts
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          enable-AzPSSession: true
 
-      # Step 3: Set AKS credentials
-      - name: Set AKS context
+      - name: Set Kubernetes context (get AKS credentials)
         run: |
           az aks get-credentials \
             --resource-group ${{ github.event.inputs.aks_resource_group }} \
             --name ${{ github.event.inputs.aks_cluster_name }} \
             --overwrite-existing
 
-      # Step 4: Attach ACR to AKS
       - name: Attach ACR
         run: |
           az aks update \
@@ -48,7 +50,6 @@ jobs:
             --resource-group ${{ github.event.inputs.aks_resource_group }} \
             --attach-acr ${{ github.event.inputs.aks_acr_name }}
 
-      # Step 5: Deploy backend infrastructure
       - name: Deploy Backend Infrastructure
         run: |
           cd k8s/
@@ -57,48 +58,49 @@ jobs:
           kubectl apply -f product-db.yaml
           kubectl apply -f order-db.yaml
 
-      # Step 6: Deploy backend microservices
       - name: Deploy Backend Microservices
         run: |
           cd k8s/
           kubectl apply -f product-service.yaml
           kubectl apply -f order-service.yaml
 
-      # Step 7: Wait for LoadBalancer IPs
-      - name: Wait for LoadBalancer IPs
+      - name: Wait for Backend LoadBalancer IPs
         run: |
           PRODUCT_IP=""
           ORDER_IP=""
           for i in $(seq 1 60); do
+            echo "Attempt $i/60 to get IPs..."
             PRODUCT_IP=$(kubectl get service product-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
             ORDER_IP=$(kubectl get service order-service-w08e1 -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
             if [[ -n "$PRODUCT_IP" && -n "$ORDER_IP" ]]; then
-              echo "LoadBalancer IPs assigned."
+              echo "All backend LoadBalancer IPs assigned!"
+              echo "Product Service IP: $PRODUCT_IP"
+              echo "Order Service IP: $ORDER_IP"
               break
             fi
             sleep 5
           done
+
           if [[ -z "$PRODUCT_IP" || -z "$ORDER_IP" ]]; then
-            echo "Error: LoadBalancer IPs not assigned after timeout."
+            echo "Error: One or more LoadBalancer IPs not assigned after timeout."
             exit 1
           fi
+
           echo "PRODUCT_IP=$PRODUCT_IP" >> $GITHUB_ENV
           echo "ORDER_IP=$ORDER_IP" >> $GITHUB_ENV
 
-      # Step 8: Capture IPs as workflow outputs
-      - name: Capture Product IP
+      - name: Capture Product Service IP for Workflow Output
         id: get_product_ip
         run: echo "external_ip=${{ env.PRODUCT_IP }}" >> $GITHUB_OUTPUT
 
-      - name: Capture Order IP
+      - name: Capture Order Service IP for Workflow Output
         id: get_order_ip
         run: echo "external_ip=${{ env.ORDER_IP }}" >> $GITHUB_OUTPUT
 
-      # Step 9: Logout from Azure
       - name: Logout from Azure
         run: az logout
 
-  # Step 10: Trigger frontend deployment using the reusable workflow
+  # 🔗 Link: Trigger frontend-cd.yml automatically after backend deployment
   trigger_frontend_cd:
     needs: deploy_backend
     uses: ./.github/workflows/frontend-cd.yml
