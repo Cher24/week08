@@ -25,12 +25,12 @@ jobs:
       # Step 1: Checkout repository
       - uses: actions/checkout@v4
 
-      # Step 2: Azure login using Service Principal JSON
+      # Step 2: Azure login
       - name: Azure Login
         uses: azure/login@v1
         with:
-          creds: ${{ secrets.SERVICE_PRINCIPAL }}
-          enable-AzPSSession: false  # Set false for bash scripts
+          auth-type: user
+          enable-AzPSSession: false  # Use bash scripts
 
       # Step 3: Set AKS credentials
       - name: Set AKS context
