@@ -2,7 +2,7 @@
 name: CD - Deploy Frontend to AKS
 
 on:
-  workflow_call:
+  workflow_call:      # 🔹 Reusable workflow, can be called by backend-cd
     inputs:
       product_api_ip:
         required: true
@@ -22,50 +22,22 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Verify Inputs
-        run: |
-          if [[ -z "${{ inputs.product_api_ip }}" || -z "${{ inputs.order_api_ip }}" ]]; then
-            echo "Error: Backend IPs not provided!"
-            exit 1
-          fi
-          echo "Product API IP: ${{ inputs.product_api_ip }}"
-          echo "Order API IP: ${{ inputs.order_api_ip }}"
+      - uses: actions/checkout@v4
 
       - name: Azure Login
         uses: azure/login@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
-          enable-AzPSSession: false
-
-      - name: Verify ACR Secret
-        run: |
-          if [[ -z "${{ secrets.AZURE_CONTAINER_REGISTRY }}" ]]; then
-            echo "Error: ACR secret is missing!"
-            exit 1
-          fi
-          echo "Using ACR: ${{ secrets.AZURE_CONTAINER_REGISTRY }}"
 
       - name: Login to ACR
         run: az acr login --name ${{ secrets.AZURE_CONTAINER_REGISTRY }}
 
       - name: Inject Backend IPs into Frontend
         run: |
-          FRONTEND_FILE=frontend/main.js
-          if ! grep -q "_PRODUCT_API_URL_" $FRONTEND_FILE; then
-            echo "Error: _PRODUCT_API_URL_ placeholder not found in $FRONTEND_FILE"
-            exit 1
-          fi
-          if ! grep -q "_ORDER_API_URL_" $FRONTEND_FILE; then
-            echo "Error: _ORDER_API_URL_ placeholder not found in $FRONTEND_FILE"
-            exit 1
-          fi
-          sed -i "s|_PRODUCT_API_URL_|${{ inputs.product_api_ip }}|g" $FRONTEND_FILE
-          sed -i "s|_ORDER_API_URL_|${{ inputs.order_api_ip }}|g" $FRONTEND_FILE
-          echo "Updated frontend/main.js with backend IPs."
-          cat $FRONTEND_FILE
+          # 🔹 Replace placeholders in frontend JS with actual backend IPs
+          sed -i "s|_PRODUCT_API_URL_|${{ inputs.product_api_ip }}|g" frontend/main.js
+          sed -i "s|_ORDER_API_URL_|${{ inputs.order_api_ip }}|g" frontend/main.js
+          cat frontend/main.js
 
       - name: Build & Push Frontend Docker Image
         run: |
